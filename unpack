@@ -1,0 +1,101 @@
+#!/usr/bin/env python3
+import configargparse
+from pathlib import Path
+from typing import Callable, Dict, Tuple
+from lib import engine, util
+from lib.open_ext import open_ext, ExtendedHandle
+
+
+class Transformer:
+    def get_file_name(self, index: int, entry: engine.FileEntry) -> str:
+        if entry.is_extractable:
+            assert entry.file_name is not None
+            return entry.file_name
+        return '{:05d}_{:016x}.dat'.format(index, entry.file_name_hash)
+
+    def transform_content(self, content: bytes) -> bytes:
+        return content
+
+
+class ScriptTransformer(Transformer):
+    def get_file_name(self, index: int, entry: engine.FileEntry) -> str:
+        return '{:05d}_{:016x}.dat'.format(index, entry.file_name_hash)
+
+    def transform_content(self, content: bytes) -> bytes:
+        return content.decode('cp932').encode('utf-8')
+
+
+def unpack_entry(
+        handle: ExtendedHandle,
+        entry: engine.FileEntry,
+        target_path: Path,
+        transformer: Transformer) -> None:
+    if target_path.exists():
+        print('Ignoring existing file {:016x} -> {}'.format(
+            entry.file_name_hash, target_path))
+        return
+
+    if not entry.is_extractable:
+        print('Ignoring unextractable file {:016x}'.format(
+            entry.file_name_hash))
+        return
+
+    print('Unpacking file {:016x} -> {}'.format(
+        entry.file_name_hash, target_path))
+    content = engine.read_file_content(handle, entry)
+    content = transformer.transform_content(content)
+    util.save_file(target_path, content)
+
+
+def unpack(
+        source_path: Path,
+        target_dir: Path,
+        file_name_hash_map: Dict[int, str],
+        transformer: Transformer) -> None:
+    with open_ext(source_path, 'rb') as handle:
+        table = engine.read_file_table(handle, file_name_hash_map)
+        for entry_num, entry in enumerate(table.entries):
+            relative_path = Path(transformer.get_file_name(entry_num, entry))
+            target_path = target_dir.joinpath(relative_path)
+            unpack_entry(handle, entry, target_path, transformer)
+
+
+def parse_args() -> configargparse.Namespace:
+    parser = configargparse.ArgumentParser()
+    parser.add('--game-dir')
+    parser.add('--data-dir', default='./data')
+    parser.add(
+        '--file-names', default='file-names.lst',
+        help='used for extracting non-scripts')
+    return parser.parse_args()
+
+
+def main() -> None:
+    args = parse_args()
+    game_dir = Path(args.game_dir)
+    data_dir = Path(args.data_dir)
+    file_name_hash_map: Dict[int, str] = {}
+
+    if args.file_names:
+        file_name_hash_map = {
+            engine.get_file_name_hash(line.strip()): line.strip()
+            for line in open(args.file_names)
+        }
+
+    directories: Dict[str, Tuple[str, Transformer]] = {
+        'script.dat': ('script', ScriptTransformer()),
+        'arc0.dat': ('arc0', Transformer()),
+        'arc1.dat': ('arc1', Transformer()),
+        'arc2.dat': ('arc2', Transformer()),
+    }
+
+    for source_file, (target_name, transformer) in directories.items():
+        source_path = game_dir.joinpath(source_file)
+        target_dir = data_dir.joinpath(target_name)
+        print('Unpacking directory {} -> {}'.format(source_path, target_dir))
+        unpack(source_path, target_dir, file_name_hash_map, transformer)
+
+
+
+if __name__ == '__main__':
+    main()
