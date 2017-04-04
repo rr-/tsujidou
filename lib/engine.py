@@ -58,6 +58,15 @@ def read_file_table(
     ])
 
 
+def write_file_table(
+        handle: ExtendedHandle,
+        table: FileTable) -> None:
+    assert handle.tell() == 0
+    handle.write_u32_le(len(table.entries) ^ ENTRY_COUNT_HASH)
+    for entry in table.entries:
+        write_file_entry(handle, entry)
+
+
 def read_file_entry(
         handle: ExtendedHandle,
         file_name_hash_map: Dict[int, str]) -> FileEntry:
@@ -90,6 +99,26 @@ def read_file_entry(
         True)
 
 
+def write_file_entry(handle: ExtendedHandle, entry: FileEntry) -> None:
+    handle.write_u64_le(entry.file_name_hash)
+    handle.write_u8(entry.file_type ^ (entry.file_name_hash & 0xFF))
+
+    offset = entry.offset or 0
+    size_compressed = entry.size_compressed or 0
+    size_original = entry.size_original or 0
+
+    if entry.file_type != FileType.COMPRESSED:
+        assert entry.file_name is not None
+        name = entry.file_name.encode('sjis')
+        offset          ^= name[len(name) >> 1]
+        size_compressed ^= name[len(name) >> 2]
+        size_original   ^= name[len(name) >> 3]
+
+    handle.write_u32_le(offset ^ (entry.file_name_hash & 0xFFFFFFFF))
+    handle.write_u32_le(size_compressed ^ (entry.file_name_hash & 0xFFFFFFFF))
+    handle.write_u32_le(size_original ^ (entry.file_name_hash & 0xFFFFFFFF))
+
+
 def read_file_content(handle: ExtendedHandle, entry: FileEntry) -> bytes:
     if entry.file_type == FileType.COMPRESSED:
         with handle.peek(entry.offset):
@@ -105,6 +134,28 @@ def read_file_content(handle: ExtendedHandle, entry: FileEntry) -> bytes:
             content = _transform_regular_content(
                 content, entry.file_name, entry.size_compressed)
         return content
+
+
+def write_file_content(
+        handle: ExtendedHandle, entry: FileEntry, content: bytes) -> None:
+    entry.offset = handle.tell()
+    entry.size_original = len(content)
+
+    if entry.file_type == FileType.COMPRESSED:
+        content = zlib.compress(content)
+        content = _transform_script_content(content, entry.file_name_hash)
+        handle.write(content)
+        entry.size_compressed = handle.tell() - entry.offset
+        return
+
+    entry.size_compressed = entry.size_original
+
+    if entry.file_type == FileType.OBFUSCATED:
+        assert entry.file_name is not None
+        assert entry.size_compressed is not None
+        content = _transform_regular_content(
+            content, entry.file_name, entry.size_compressed)
+    handle.write(content)
 
 
 def _transform_script_content(content: bytes, content_hash: int) -> bytes:

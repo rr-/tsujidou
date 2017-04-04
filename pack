@@ -1,0 +1,124 @@
+#!/usr/bin/env python3
+import pickle
+from pathlib import Path
+from typing import List, Tuple, Generator
+from lib import engine
+from lib.snapshot import SnapshotEntry
+from lib.open_ext import open_ext
+import configargparse
+
+
+class Transformer:
+    def transform_content(self, content: bytes) -> bytes:
+        return content
+
+
+class ScriptTransformer(Transformer):
+    def transform_content(self, content: bytes) -> bytes:
+        return content.decode('utf-8').encode('cp932')
+
+
+def collect_entries(
+    source_dir: Path,
+    snapshots: List[SnapshotEntry]
+) -> Generator[Tuple[Path, engine.FileEntry], None, None]:
+    print('Collecting files')
+
+    relative_path_to_snapshot_map = {
+        snapshot_entry.relative_path: snapshot_entry
+        for snapshot_entry in snapshots
+    }
+
+    for source_path in source_dir.glob('**/*'):
+        if not source_path.is_file():
+            continue
+
+        relative_path = source_path.relative_to(source_dir)
+
+        try:
+            snapshot = relative_path_to_snapshot_map[relative_path]
+        except KeyError:
+            raise ValueError('Unexpected file: {}'.format(relative_path))
+
+        yield (
+            source_path,
+            engine.FileEntry(
+                file_type=snapshot.file_type,
+                file_name_hash=snapshot.file_name_hash,
+                file_name=snapshot.file_name,
+
+                # computed by engine.write_file_content
+                offset=None,
+                size_compressed=None,
+                size_original=None,
+
+                is_extractable=True))
+
+
+def pack(
+        source_dir: Path,
+        target_path: Path,
+        snapshots: List[SnapshotEntry],
+        transformer: Transformer) -> None:
+    entries: List[engine.FileEntry] = []
+    hash_source_path_map: Dict[int, Path] = {}
+
+    for source_path, entry in sorted(collect_entries(source_dir, snapshots)):
+        hash_source_path_map[entry.file_name_hash] = source_path
+        entries.append(entry)
+
+    with open_ext(target_path, 'wb') as handle:
+        # write dummy file table to reserve space
+        table = engine.FileTable(entries)
+        engine.write_file_table(handle, table)
+
+        # write and update entries
+        for entry in entries:
+            source_path = hash_source_path_map[entry.file_name_hash]
+            print('Packing file {} -> {:016x}'.format(
+                source_path, entry.file_name_hash))
+
+            with source_path.open('rb') as tmp_handle:
+                content = tmp_handle.read()
+
+            content = transformer.transform_content(content)
+            engine.write_file_content(handle, entry, content)
+
+        # rewrite table, this time with correct sizes and offsets
+        handle.seek(0)
+        engine.write_file_table(handle, table)
+
+
+def parse_args() -> configargparse.Namespace:
+    parser = configargparse.ArgumentParser()
+    parser.add('--game-dir')
+    parser.add('--data-dir', default='./data')
+    return parser.parse_args()
+
+
+def main() -> None:
+    args = parse_args()
+    game_dir = Path(args.game_dir)
+    data_dir = Path(args.data_dir)
+
+    directories: List[Tuple[str, str, Transformer]] = [
+        ('script', 'script.dat', ScriptTransformer()),
+        ('arc0', 'arc0.dat', Transformer()),
+        ('arc1', 'arc1.dat', Transformer()),
+        ('arc2', 'arc2.dat', Transformer()),
+    ]
+
+    for source_name, target_name, transformer in directories:
+        source_dir = data_dir.joinpath(source_name)
+        target_path = game_dir.joinpath(target_name)
+
+        snapshot_path = data_dir.joinpath(source_name + '-snapshot.dat')
+        with snapshot_path.open('rb') as handle:
+            snapshots = pickle.load(handle)
+
+        print('Packing directory {} -> {}'.format(source_dir, target_path))
+        pack(source_dir, target_path, snapshots, transformer)
+
+
+if __name__ == '__main__':
+    main()
