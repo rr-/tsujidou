@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
+import pickle
 import configargparse
 from pathlib import Path
-from typing import Callable, Dict, Tuple
+from typing import Callable, Dict, Tuple, Generator
 from lib import engine, util
+from lib.snapshot import SnapshotEntry
 from lib.open_ext import open_ext, ExtendedHandle
 
 
@@ -51,13 +53,20 @@ def unpack(
         source_path: Path,
         target_dir: Path,
         file_name_hash_map: Dict[int, str],
-        transformer: Transformer) -> None:
+        transformer: Transformer) -> Generator[SnapshotEntry, None, None]:
     with open_ext(source_path, 'rb') as handle:
         table = engine.read_file_table(handle, file_name_hash_map)
         for entry_num, entry in enumerate(table.entries):
             relative_path = Path(transformer.get_file_name(entry_num, entry))
             target_path = target_dir.joinpath(relative_path)
             unpack_entry(handle, entry, target_path, transformer)
+
+            yield SnapshotEntry(
+                entry.file_type,
+                entry.file_name,
+                entry.file_name_hash,
+                relative_path,
+                target_path.stat() if target_path.exists() else None)
 
 
 def parse_args() -> configargparse.Namespace:
@@ -89,12 +98,17 @@ def main() -> None:
         'arc2.dat': ('arc2', Transformer()),
     }
 
-    for source_file, (target_name, transformer) in directories.items():
-        source_path = game_dir.joinpath(source_file)
+    for source_name, (target_name, transformer) in directories.items():
+        source_path = game_dir.joinpath(source_name)
         target_dir = data_dir.joinpath(target_name)
-        print('Unpacking directory {} -> {}'.format(source_path, target_dir))
-        unpack(source_path, target_dir, file_name_hash_map, transformer)
 
+        print('Unpacking directory {} -> {}'.format(source_path, target_dir))
+        snapshots = list(unpack(
+            source_path, target_dir, file_name_hash_map, transformer))
+
+        snapshot_path = data_dir.joinpath(target_name + '-snapshot.dat')
+        with snapshot_path.open('wb') as handle:
+            pickle.dump(snapshots, handle)
 
 
 if __name__ == '__main__':
