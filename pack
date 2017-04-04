@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 import pickle
 from pathlib import Path
-from typing import List, Tuple, Generator
+from typing import List, Dict, Tuple, Generator
 from lib import engine
 from lib.snapshot import SnapshotEntry
 from lib.open_ext import open_ext
@@ -19,8 +19,8 @@ class ScriptTransformer(Transformer):
 
 
 def collect_entries(
-    source_dir: Path,
-    snapshots: List[SnapshotEntry]
+        source_dir: Path,
+        snapshots: List[SnapshotEntry]
 ) -> Generator[Tuple[Path, engine.FileEntry], None, None]:
     print('Collecting files')
 

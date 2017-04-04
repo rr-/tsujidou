@@ -86,7 +86,7 @@ CRC_TABLE = [int(x, 16) for x in '''
 
 def crc64(content: bytes) -> int:
     crc = 0xFFFFFFFFFFFFFFFF
-    for c in content:
-        idx = ((crc >> 56) ^ c) & 0xFF
+    for byte in content:
+        idx = ((crc >> 56) ^ byte) & 0xFF
         crc = CRC_TABLE[idx] ^ ((crc << 8) & 0xFFFFFFFFFFFFFFFF)
     return crc ^ 0xFFFFFFFFFFFFFFFF

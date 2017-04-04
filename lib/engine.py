@@ -5,7 +5,7 @@ import zlib
 from enum import IntEnum
 from typing import Dict, Optional, List
 from lib.crc64 import crc64
-from lib.open_ext import ExtendedHandle, open_ext
+from lib.open_ext import ExtendedHandle
 
 
 GAME_TITLE = '辻堂さんの純愛ロード'
@@ -18,7 +18,7 @@ def get_file_name_hash(name: str) -> int:
 
 
 class FileType(IntEnum):
-    PLAIN      = 0
+    PLAIN = 0
     OBFUSCATED = 1
     COMPRESSED = 2
 
