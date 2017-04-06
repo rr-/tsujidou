@@ -182,5 +182,6 @@ def main() -> None:
             with snapshot_path.open('wb') as handle:
                 pickle.dump(snapshots, handle)
 
+
 if __name__ == '__main__':
     main()
