@@ -20,8 +20,9 @@ class ScriptTransformer(Transformer):
 
 def collect_entries(
         source_dir: Path,
-        snapshots: List[SnapshotEntry]
-) -> Generator[Tuple[Path, engine.FileEntry], None, None]:
+        snapshots: List[SnapshotEntry],
+        only_new: bool
+) -> Generator[Tuple[Path, SnapshotEntry, engine.FileEntry], None, None]:
     print('Collecting files')
 
     relative_path_to_snapshot_map = {
@@ -40,8 +41,12 @@ def collect_entries(
         except KeyError:
             raise ValueError('Unexpected file: {}'.format(relative_path))
 
+        if only_new and source_path.stat().st_mtime <= snapshot.stat.st_mtime:
+            continue
+
         yield (
             source_path,
+            snapshot,
             engine.FileEntry(
                 file_type=snapshot.file_type,
                 file_name_hash=snapshot.file_name_hash,
@@ -55,7 +60,7 @@ def collect_entries(
                 is_extractable=True))
 
 
-def pack(
+def pack_archive(
         source_dir: Path,
         target_path: Path,
         snapshots: List[SnapshotEntry],
@@ -63,7 +68,8 @@ def pack(
     entries: List[engine.FileEntry] = []
     hash_source_path_map: Dict[int, Path] = {}
 
-    for source_path, entry in sorted(collect_entries(source_dir, snapshots)):
+    for source_path, _snapshot, entry in sorted(
+            collect_entries(source_dir, snapshots, only_new=False)):
         hash_source_path_map[entry.file_name_hash] = source_path
         entries.append(entry)
 
@@ -80,8 +86,8 @@ def pack(
 
             with source_path.open('rb') as tmp_handle:
                 content = tmp_handle.read()
+                content = transformer.transform_content(content)
 
-            content = transformer.transform_content(content)
             engine.write_file_content(handle, entry, content)
 
         # rewrite table, this time with correct sizes and offsets
@@ -89,10 +95,59 @@ def pack(
         engine.write_file_table(handle, table)
 
 
+def patch_archive(
+        source_dir: Path,
+        target_path: Path,
+        snapshots: List[SnapshotEntry],  # mutated
+        transformer: Transformer) -> None:
+    # read the existing file table
+    with open_ext(target_path, 'rb') as handle:
+        table = engine.read_file_table(
+            handle,
+            file_name_hash_map={
+                engine.get_file_name_hash(str(snapshot.relative_path)):
+                    str(snapshot.relative_path)
+                for snapshot in snapshots
+            })
+
+    with open_ext(target_path, 'ab') as handle:
+        assert handle.tell() > 0
+
+        for source_path, snapshot, entry in collect_entries(
+                source_dir, snapshots, only_new=True):
+            print('Patching file {} -> {:016x}'.format(
+                source_path, entry.file_name_hash))
+
+            # use entry inside the table rather than the one produced by
+            # collect_entries - the changes made to it by
+            # engine.write_file_content need to be propagated back to the file
+            # table.
+            original_entry = next(
+                original_entry
+                for original_entry in table.entries
+                if original_entry.file_name_hash == entry.file_name_hash)
+            assert original_entry
+
+            with source_path.open('rb') as tmp_handle:
+                content = tmp_handle.read()
+                content = transformer.transform_content(content)
+
+            engine.write_file_content(handle, original_entry, content)
+
+            snapshot.stat = source_path.stat()
+
+    # rewrite table, this time with correct sizes and offsets
+    with open_ext(target_path, 'r+b') as handle:
+        assert handle.tell() == 0
+        engine.write_file_table(handle, table)
+
+
 def parse_args() -> configargparse.Namespace:
-    parser = configargparse.ArgumentParser()
+    parser = configargparse.ArgumentParser(
+        default_config_files=['./config.ini'])
     parser.add('--game-dir')
     parser.add('--data-dir', default='./data')
+    parser.add('--repack', action='store_true')
     return parser.parse_args()
 
 
@@ -100,6 +155,7 @@ def main() -> None:
     args = parse_args()
     game_dir = Path(args.game_dir)
     data_dir = Path(args.data_dir)
+    repack: bool = args.repack
 
     directories: List[Tuple[str, str, Transformer]] = [
         ('script', 'script.dat', ScriptTransformer()),
@@ -116,9 +172,15 @@ def main() -> None:
         with snapshot_path.open('rb') as handle:
             snapshots = pickle.load(handle)
 
-        print('Packing directory {} -> {}'.format(source_dir, target_path))
-        pack(source_dir, target_path, snapshots, transformer)
-
+        if repack:
+            print('Packing directory {} -> {}'.format(source_dir, target_path))
+            pack_archive(source_dir, target_path, snapshots, transformer)
+        else:
+            print(
+                'Patching directory {} -> {}'.format(source_dir, target_path))
+            patch_archive(source_dir, target_path, snapshots, transformer)
+            with snapshot_path.open('wb') as handle:
+                pickle.dump(snapshots, handle)
 
 if __name__ == '__main__':
     main()
