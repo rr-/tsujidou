@@ -1,12 +1,17 @@
 #!/usr/bin/env python3
 import pickle
+import threading
+import concurrent.futures
 from pathlib import Path
-from typing import Dict, Tuple, Generator
+from typing import List, Dict, Tuple
 from lib import engine, util
 from lib.tlg import tlg
 from lib.snapshot import SnapshotEntry
 from lib.open_ext import open_ext, ExtendedHandle
 import configargparse
+
+
+_lock = threading.Lock()
 
 
 class Transformer:
@@ -55,29 +60,39 @@ def unpack_entry(
 
     print('Unpacking file {:016x} -> {}'.format(
         entry.file_name_hash, target_path))
-    content = engine.read_file_content(handle, entry)
-    content = transformer.transform_content(entry, content)
-    util.save_file(target_path, content)
+    try:
+        with _lock:  # reading from the shared file handle needs to be atomic
+            content = engine.read_file_content(handle, entry)
+        content = transformer.transform_content(entry, content)
+        util.save_file(target_path, content)
+    except Exception as ex:
+        print('Error unpacking {:016x}: {}'.format(entry.file_name_hash, ex))
 
 
 def unpack(
         source_path: Path,
         target_dir: Path,
         file_name_hash_map: Dict[int, str],
-        transformer: Transformer) -> Generator[SnapshotEntry, None, None]:
+        transformer: Transformer) -> List[SnapshotEntry]:
     with open_ext(source_path, 'rb') as handle:
         table = engine.read_file_table(handle, file_name_hash_map)
-        for entry_num, entry in enumerate(table.entries):
+
+        def work(args: Tuple[int, engine.FileEntry]) -> SnapshotEntry:
+            entry_num: int = args[0]
+            entry: engine.FileEntry = args[1]
             relative_path = Path(transformer.get_file_name(entry_num, entry))
             target_path = target_dir.joinpath(relative_path)
             unpack_entry(handle, entry, target_path, transformer)
 
-            yield SnapshotEntry(
+            return SnapshotEntry(
                 entry.file_type,
                 entry.file_name,
                 entry.file_name_hash,
                 relative_path,
                 target_path.stat() if target_path.exists() else None)
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
+            return list(executor.map(work, enumerate(table.entries)))
 
 
 def parse_args() -> configargparse.Namespace:
@@ -115,8 +130,8 @@ def main() -> None:
         target_dir = data_dir.joinpath(target_name)
 
         print('Unpacking directory {} -> {}'.format(source_path, target_dir))
-        snapshots = list(unpack(
-            source_path, target_dir, file_name_hash_map, transformer))
+        snapshots = unpack(
+            source_path, target_dir, file_name_hash_map, transformer)
 
         snapshot_path = data_dir.joinpath(target_name + '-snapshot.dat')
         with snapshot_path.open('wb') as handle:
