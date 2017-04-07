@@ -145,8 +145,8 @@ def patch_archive(
 def parse_args() -> configargparse.Namespace:
     parser = configargparse.ArgumentParser(
         default_config_files=['./config.ini'])
-    parser.add('--game-dir')
-    parser.add('--data-dir', default='./data')
+    parser.add('--game-dir', required=True)
+    parser.add('--data-dir', required=True, default='./data')
     parser.add('--repack', action='store_true')
     return parser.parse_args()
 
