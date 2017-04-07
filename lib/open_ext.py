@@ -5,7 +5,7 @@ from typing import Any
 
 
 class PeekObject:
-    def __init__(self, handle, *seek_args: Any) -> None:
+    def __init__(self, handle: Any, *seek_args: Any) -> None:
         self._handle = handle
         self._seek_args = seek_args
         self._old_pos = 0
@@ -19,8 +19,8 @@ class PeekObject:
 
 
 class ExtendedHandle:
-    def __init__(self, path: Path, mode: str) -> None:
-        self._handle = open(path, mode)
+    def __init__(self, handle: Any) -> None:
+        self._handle = handle
 
     def __getattr__(self, attr: Any) -> Any:
         return getattr(self._handle, attr)
@@ -92,4 +92,4 @@ class ExtendedHandle:
 
 
 def open_ext(path: Path, mode: str) -> ExtendedHandle:
-    return ExtendedHandle(path, mode)
+    return ExtendedHandle(open(path, mode))
