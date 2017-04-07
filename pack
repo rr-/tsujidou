@@ -105,8 +105,8 @@ def patch_archive(
         table = engine.read_file_table(
             handle,
             file_name_hash_map={
-                engine.get_file_name_hash(str(snapshot.relative_path)):
-                    str(snapshot.relative_path)
+                engine.get_file_name_hash(str(snapshot.file_name)):
+                    str(snapshot.file_name)
                 for snapshot in snapshots
             })
 

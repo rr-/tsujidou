@@ -27,8 +27,7 @@
 1. Scripts:
     - word wrapping
     - unicode hack
-2. TLG to PNG
-3. PNG to TLG (maybe won't be needed?)
+2. PNG to TLG (maybe won't be needed?)
 
 ---
 

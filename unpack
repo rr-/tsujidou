@@ -3,6 +3,7 @@ import pickle
 from pathlib import Path
 from typing import Dict, Tuple, Generator
 from lib import engine, util
+from lib.tlg import tlg
 from lib.snapshot import SnapshotEntry
 from lib.open_ext import open_ext, ExtendedHandle
 import configargparse
@@ -12,10 +13,19 @@ class Transformer:
     def get_file_name(self, index: int, entry: engine.FileEntry) -> str:
         if entry.is_extractable:
             assert entry.file_name is not None
+
+            if entry.file_name.endswith('.tlg'):
+                return entry.file_name + '.png'
+
             return entry.file_name
         return '{:05d}_{:016x}.dat'.format(index, entry.file_name_hash)
 
-    def transform_content(self, content: bytes) -> bytes:
+    def transform_content(
+            self, entry: engine.FileEntry, content: bytes) -> bytes:
+        if entry.file_name is not None and entry.file_name.endswith('.tlg'):
+            assert tlg.is_tlg(content)
+            return tlg.tlg_to_png(content)
+
         return content
 
 
@@ -23,7 +33,8 @@ class ScriptTransformer(Transformer):
     def get_file_name(self, index: int, entry: engine.FileEntry) -> str:
         return '{:05d}_{:016x}.dat'.format(index, entry.file_name_hash)
 
-    def transform_content(self, content: bytes) -> bytes:
+    def transform_content(
+            self, entry: engine.FileEntry, content: bytes) -> bytes:
         return content.decode('cp932').encode('utf-8')
 
 
@@ -45,7 +56,7 @@ def unpack_entry(
     print('Unpacking file {:016x} -> {}'.format(
         entry.file_name_hash, target_path))
     content = engine.read_file_content(handle, entry)
-    content = transformer.transform_content(content)
+    content = transformer.transform_content(entry, content)
     util.save_file(target_path, content)
 
 
