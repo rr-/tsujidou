@@ -3,100 +3,96 @@ import pickle
 import threading
 import concurrent.futures
 from pathlib import Path
-from typing import Any, List, Dict, Tuple
-from lib import engine, util
+from typing import Tuple, List, Dict, Callable
+from lib import engine, script
 from lib.tlg import tlg
-from lib.snapshot import SnapshotEntry
+from lib.snapshot import Snapshot
 from lib.open_ext import open_ext, ExtendedHandle
 import configargparse
 
 
 _lock = threading.Lock()
+Postprocessor = Callable[[Snapshot, bytes], None]
 
 
-class Transformer:
-    def get_file_name(self, index: int, entry: engine.FileEntry) -> str:
-        if entry.is_extractable:
-            assert entry.file_name is not None
-            if entry.file_name.endswith('.tlg'):
-                return entry.file_name + '.png'
-            return entry.file_name
-        return '{:05d}_{:016x}.dat'.format(index, entry.file_name_hash)
+def image_postprocessor(snapshot: Snapshot, content: bytes) -> None:
+    if not snapshot.main_artifact.path.name.endswith('.tlg'):
+        return
+    if not tlg.is_tlg(content):
+        return
 
-    def transform_content(
-            self,
-            entry: engine.FileEntry,
-            content: bytes) -> Tuple[bytes, Any]:
-        metadata = None  # type: Any
-        if entry.file_name is not None and entry.file_name.endswith('.tlg'):
-            if tlg.is_tlg(content):
-                content, metadata = tlg.tlg_to_png(content)
-        return content, metadata
+    image_path = (
+        snapshot.main_artifact.path
+        .with_name(snapshot.main_artifact.path.name.lstrip('.'))
+        .with_suffix('.png'))
+    image_content, metadata = tlg.tlg_to_png(content)
+    snapshot.save_extra_artifact('png', image_path, image_content)
+
+    if metadata:
+        metadata_path = snapshot.main_artifact.path.with_suffix('.dat')
+        snapshot.save_extra_artifact(
+            'meta', metadata_path, pickle.dumps(metadata))
 
 
-class ScriptTransformer(Transformer):
-    def get_file_name(self, index: int, entry: engine.FileEntry) -> str:
-        return '{:05d}_{:016x}.dat'.format(index, entry.file_name_hash)
+def script_postprocessor(snapshot: Snapshot, content: bytes) -> None:
+    target_path = (
+        snapshot.main_artifact.path
+        .with_name(snapshot.main_artifact.path.name.lstrip('.'))
+        .with_suffix('.txt'))
+    snapshot.save_extra_artifact(
+        'script', target_path, script.decode_script(content))
 
-    def transform_content(
-            self,
-            entry: engine.FileEntry,
-            content: bytes) -> Tuple[bytes, Any]:
-        metadata = None
-        return content.decode('cp932').encode('utf-8'), metadata
+
+def get_main_artifact_name(entry: engine.FileEntry) -> Path:
+    if entry.file_name:
+        ret = Path(entry.file_name)
+    else:
+        ret = Path(
+            '{:05d}_{:016x}.dat'.format(entry.file_num, entry.file_name_hash))
+    return ret.with_name('.' + ret.name)
 
 
 def unpack_entry(
         handle: ExtendedHandle,
         entry: engine.FileEntry,
-        target_path: Path,
-        transformer: Transformer) -> Tuple[Any, Any]:
+        target_dir: Path,
+        postprocessor: Postprocessor) -> Snapshot:
+    snapshot = Snapshot(entry)
+
+    target_path = target_dir.joinpath(get_main_artifact_name(entry))
+
     if not entry.is_extractable:
         print('Ignoring unextractable file {:016x}'.format(
             entry.file_name_hash))
-        return None, None
+        return snapshot
 
-    print('Unpacking file {:016x} -> {}'.format(
-        entry.file_name_hash, target_path))
     try:
         with _lock:  # reading from the shared file handle needs to be atomic
             content = engine.read_file_content(handle, entry)
-        content, metadata = transformer.transform_content(entry, content)
-        util.save_file(target_path, content)
+        snapshot.save_main_artifact(target_path, content)
+        postprocessor(snapshot, content)
+        print('Saved {:016x} -> {}'.format(
+            snapshot.entry.file_name_hash,
+            [str(artifact.path) for artifact in snapshot.all_artifacts]))
     except Exception as ex:
         print('Error unpacking {:016x}: {}'.format(entry.file_name_hash, ex))
 
-    return target_path.stat(), metadata
+    return snapshot
 
 
 def unpack(
         source_path: Path,
         target_dir: Path,
         file_name_hash_map: Dict[int, str],
-        transformer: Transformer) -> List[SnapshotEntry]:
+        postprocessor: Postprocessor) -> List[Snapshot]:
     with open_ext(source_path, 'rb') as handle:
         table = engine.read_file_table(handle, file_name_hash_map)
 
-        def work(args: Tuple[int, engine.FileEntry]) -> SnapshotEntry:
-            entry_num = args[0]  # type: int
-            entry = args[1]  # type: engine.FileEntry
-            relative_path = Path(transformer.get_file_name(entry_num, entry))
-            target_path = target_dir.joinpath(relative_path)
-
-            stat, metadata = unpack_entry(
-                handle, entry, target_path, transformer)
-
-            return SnapshotEntry(
-                entry_num,
-                entry.file_type,
-                entry.file_name,
-                entry.file_name_hash,
-                relative_path,
-                stat,
-                metadata)
+        def work(entry: engine.FileEntry) -> Snapshot:
+            return unpack_entry(handle, entry, target_dir, postprocessor)
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
-            return list(executor.map(work, enumerate(table.entries)))
+            return list(executor.map(work, table.entries))
 
 
 def parse_args() -> configargparse.Namespace:
@@ -123,19 +119,19 @@ def main() -> None:
         }
 
     directories = {
-        'script.dat': ('script', ScriptTransformer()),
-        'arc0.dat': ('arc0', Transformer()),
-        'arc1.dat': ('arc1', Transformer()),
-        'arc2.dat': ('arc2', Transformer()),
-    }  # type: Dict[str, Tuple[str, Transformer]]
+        'script.dat': ('script', script_postprocessor),
+        'arc0.dat': ('arc0', image_postprocessor),
+        'arc1.dat': ('arc1', image_postprocessor),
+        'arc2.dat': ('arc2', image_postprocessor),
+    }  # type: Dict[str, Tuple[str, Postprocessor]]
 
-    for source_name, (target_name, transformer) in directories.items():
+    for source_name, (target_name, postprocessor) in directories.items():
         source_path = game_dir.joinpath(source_name)
         target_dir = data_dir.joinpath(target_name)
 
         print('Unpacking directory {} -> {}'.format(source_path, target_dir))
         snapshots = unpack(
-            source_path, target_dir, file_name_hash_map, transformer)
+            source_path, target_dir, file_name_hash_map, postprocessor)
 
         snapshot_path = data_dir.joinpath(target_name + '-snapshot.dat')
         with snapshot_path.open('wb') as handle:

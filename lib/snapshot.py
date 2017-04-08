@@ -1,22 +1,60 @@
 from pathlib import Path
-from typing import Any, Optional
-from lib import engine
+from typing import List, Optional
+from lib import engine, util
 
 
-class SnapshotEntry:
-    def __init__(
-            self,
-            file_num: int,
-            file_type: engine.FileType,
-            file_name: Optional[str],
-            file_name_hash: int,
-            relative_path: Path,
-            stat: Any,
-            metadata: Any) -> None:
-        self.file_num = file_num
-        self.file_type = file_type
-        self.file_name = file_name
-        self.file_name_hash = file_name_hash
-        self.relative_path = relative_path
-        self.stat = stat
-        self.metadata = metadata  # metadata associated with file conversion
+class Artifact:
+    def __init__(self, path: Path) -> None:
+        self.path = path
+        self.stat = path.stat()
+
+    def update_stat(self) -> None:
+        self.stat = self.path.stat()
+
+    @property
+    def was_changed(self) -> bool:
+        return self.path.stat().st_mtime > self.stat.st_mtime
+
+
+class Snapshot:
+    def __init__(self, file_entry: engine.FileEntry) -> None:
+        self.entry = file_entry
+        self.extra_artifacts = {}  # type: Dict[str, Artifact]
+        self.main_artifact = None  # type: Optional[Artifact]
+
+    def save_main_artifact(self, path: Path, content: bytes) -> None:
+        util.save_file(path, content)
+        self.main_artifact = Artifact(path)
+
+    def save_extra_artifact(
+            self, artifact_id: str, path: Path, content: bytes) -> None:
+        util.save_file(path, content)
+        self.extra_artifacts[artifact_id] = Artifact(path)
+
+    def read_main_artifact(self) -> Optional[bytes]:
+        if not self.main_artifact:
+            return None
+        path = self.main_artifact.path
+        if not path.exists():
+            return None
+        with path.open('rb') as handle:
+            return handle.read()
+
+    def read_extra_artifact(self, artifact_id: str) -> Optional[bytes]:
+        if artifact_id not in self.extra_artifacts:
+            return None
+        path = self.extra_artifacts[artifact_id].path
+        if not path.exists():
+            return None
+        with path.open('rb') as handle:
+            return handle.read()
+
+    @property
+    def all_artifacts(self) -> List[Artifact]:
+        return (
+            ([self.main_artifact] if self.main_artifact else [])
+            + list(self.extra_artifacts.values()))
+
+    @property
+    def was_changed(self) -> bool:
+        return any(artifact.was_changed for artifact in self.all_artifacts)

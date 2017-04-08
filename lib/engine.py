@@ -26,6 +26,7 @@ class FileType(IntEnum):
 class FileEntry:
     def __init__(
             self,
+            file_num: int,
             file_type: FileType,
             file_name_hash: int,
             file_name: Optional[str],
@@ -33,6 +34,7 @@ class FileEntry:
             size_compressed: Optional[int],
             size_original: Optional[int],
             is_extractable: bool) -> None:
+        self.file_num = file_num
         self.file_type = file_type
         self.file_name_hash = file_name_hash
         self.file_name = file_name
@@ -53,7 +55,7 @@ def read_file_table(
     assert handle.tell() == 0
     entry_count = handle.read_u32_le() ^ ENTRY_COUNT_HASH
     return FileTable([
-        read_file_entry(handle, file_name_hash_map)
+        read_file_entry(handle, file_name_hash_map, i)
         for i in range(entry_count)
     ])
 
@@ -69,7 +71,8 @@ def write_file_table(
 
 def read_file_entry(
         handle: ExtendedHandle,
-        file_name_hash_map: Dict[int, str]) -> FileEntry:
+        file_name_hash_map: Dict[int, str],
+        file_num: int) -> FileEntry:
     file_name_hash  = handle.read_u64_le()
     file_type       = FileType(handle.read_u8() ^ (file_name_hash & 0xFF))
     offset          = handle.read_u32_le() ^ (file_name_hash & 0xFFFFFFFF)
@@ -92,9 +95,9 @@ def read_file_entry(
 
     if not is_extractable:
         return FileEntry(
-            file_type, file_name_hash, None, None, None, None, False)
+            file_num, file_type, file_name_hash, None, None, None, None, False)
     return FileEntry(
-        file_type, file_name_hash, file_name,
+        file_num, file_type, file_name_hash, file_name,
         offset, size_compressed, size_original,
         True)
 

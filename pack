@@ -2,96 +2,75 @@
 import pickle
 from pathlib import Path
 from typing import List, Tuple, Generator, Callable
-from lib import engine
+from lib import engine, script
 from lib.tlg import tlg
-from lib.snapshot import SnapshotEntry
+from lib.snapshot import Snapshot
 from lib.open_ext import open_ext
 import configargparse
 
 
-Transformer = Callable[[bytes, SnapshotEntry], bytes]
+Transformer = Callable[[Snapshot], bytes]
 
 
-def default_transformer(content: bytes, snapshot: SnapshotEntry) -> bytes:
-    if snapshot.file_name is not None \
-            and snapshot.file_name.endswith('.tlg') \
-            and snapshot.metadata:
-        # it's only needed to convert PNG back to TLG if it contains valuable
-        # metadata; otherwise it's okay to leave it as PNG - game understands
-        # these.
-        return tlg.png_to_tlg(content, snapshot.metadata)
-    return content
+def image_transformer(snapshot: Snapshot) -> bytes:
+    if ('png' in snapshot.extra_artifacts
+            and snapshot.extra_artifacts['png'].was_changed):
+        png_content = snapshot.read_extra_artifact('png')
+        assert png_content is not None
+        if 'meta' in snapshot.extra_artifacts:
+            metadata = pickle.loads(snapshot.read_extra_artifact('meta'))
+            assert metadata is not None
+            return tlg.png_to_tlg(png_content, metadata)
+        return png_content
+
+    ret = snapshot.read_main_artifact()
+    assert ret is not None
+    return ret
 
 
-def script_transformer(content: bytes, snapshot: SnapshotEntry) -> bytes:
-    return content.decode('utf-8').encode('cp932')
+def script_transformer(snapshot: Snapshot) -> bytes:
+    script_content = snapshot.read_extra_artifact('script')
+    assert script_content is not None
+    return script.encode_script(script_content)
 
 
-def collect_entries(
-        source_dir: Path,
-        snapshots: List[SnapshotEntry],
+def filter_snapshots(
+        snapshots: List[Snapshot],
         only_new: bool
-) -> Generator[Tuple[Path, SnapshotEntry, engine.FileEntry], None, None]:
-    print('Collecting files')
-
-    relative_path_to_snapshot_map = {
-        snapshot_entry.relative_path: snapshot_entry
-        for snapshot_entry in snapshots
-    }
-
-    for source_path in source_dir.glob('**/*'):
-        if not source_path.is_file():
+) -> Generator[Snapshot, None, None]:
+    for snapshot in snapshots:
+        if not snapshot.entry.is_extractable:
             continue
-
-        relative_path = source_path.relative_to(source_dir)
-
-        try:
-            snapshot = relative_path_to_snapshot_map[relative_path]
-        except KeyError:
-            raise ValueError('Unexpected file: {}'.format(relative_path))
-
-        if only_new and source_path.stat().st_mtime <= snapshot.stat.st_mtime:
+        for artifact in snapshot.all_artifacts:
+            if not artifact.path.exists():
+                raise ValueError('File {} was deleted!'.format(artifact.path))
+        if only_new and not snapshot.was_changed:
             continue
-
-        yield (
-            source_path,
-            snapshot,
-            engine.FileEntry(
-                file_type=snapshot.file_type,
-                file_name_hash=snapshot.file_name_hash,
-                file_name=snapshot.file_name,
-
-                # computed by engine.write_file_content
-                offset=None,
-                size_compressed=None,
-                size_original=None,
-
-                is_extractable=True))
+        yield snapshot
 
 
 def pack_archive(
-        source_dir: Path,
         target_path: Path,
-        snapshots: List[SnapshotEntry],
-        transformer: Transformer) -> None:
-    items = list(sorted(
-        collect_entries(source_dir, snapshots, only_new=False)))
-    entries = [entry for _source_path, _snapshot, entry in items]
+        snapshots: List[Snapshot],
+        transformer: Transformer) -> Generator[Snapshot, None, None]:
+    snapshots = list(sorted(
+        filter_snapshots(snapshots, only_new=False),
+        key=lambda snapshot: snapshot.entry.file_num))
+
     with open_ext(target_path, 'wb') as handle:
         # write dummy file table to reserve space
-        table = engine.FileTable(entries)
+        table = engine.FileTable([snapshot.entry for snapshot in snapshots])
         engine.write_file_table(handle, table)
 
         # write and update entries
-        for source_path, snapshot, entry in items:
-            print('Packing file {} -> {:016x}'.format(
-                source_path, entry.file_name_hash))
+        for snapshot in snapshots:
+            print('Packing {:016x} <- {}'.format(
+                snapshot.entry.file_name_hash,
+                [str(artifact.path) for artifact in snapshot.all_artifacts]))
 
-            with source_path.open('rb') as tmp_handle:
-                content = tmp_handle.read()
-                content = transformer(content, snapshot)
-
-            engine.write_file_content(handle, entry, content)
+            content = transformer(snapshot)
+            engine.write_file_content(handle, snapshot.entry, content)
+            yield snapshot
 
         # rewrite table, this time with correct sizes and offsets
         handle.seek(0)
@@ -99,45 +78,38 @@ def pack_archive(
 
 
 def patch_archive(
-        source_dir: Path,
         target_path: Path,
-        snapshots: List[SnapshotEntry],  # mutated
-        transformer: Transformer) -> None:
+        snapshots: List[Snapshot],
+        transformer: Transformer) -> Generator[Snapshot, None, None]:
     # read the existing file table
     with open_ext(target_path, 'rb') as handle:
         table = engine.read_file_table(
             handle,
             file_name_hash_map={
-                engine.get_file_name_hash(str(snapshot.file_name)):
-                    str(snapshot.file_name)
+                engine.get_file_name_hash(str(snapshot.entry.file_name)):
+                    str(snapshot.entry.file_name)
                 for snapshot in snapshots
             })
 
     with open_ext(target_path, 'ab') as handle:
         assert handle.tell() > 0
 
-        for source_path, snapshot, entry in collect_entries(
-                source_dir, snapshots, only_new=True):
-            print('Patching file {} -> {:016x}'.format(
-                source_path, entry.file_name_hash))
+        for snapshot in filter_snapshots(snapshots, only_new=True):
+            # use entry inside the table rather than the one held by snapshot:
+            # changes made to the entry by engine.write_file_content need to be
+            # visible in the file table.
+            table_entry = next(
+                table_entry
+                for table_entry in table.entries
+                if table_entry.file_name_hash == snapshot.entry.file_name_hash)
+            assert table_entry
 
-            # use entry inside the table rather than the one produced by
-            # collect_entries - the changes made to it by
-            # engine.write_file_content need to be propagated back to the file
-            # table.
-            original_entry = next(
-                original_entry
-                for original_entry in table.entries
-                if original_entry.file_name_hash == entry.file_name_hash)
-            assert original_entry
-
-            with source_path.open('rb') as tmp_handle:
-                content = tmp_handle.read()
-                content = transformer(content, snapshot)
-
-            engine.write_file_content(handle, original_entry, content)
-
-            snapshot.stat = source_path.stat()
+            print('Packing {:016x} <- {}'.format(
+                snapshot.entry.file_name_hash,
+                [str(artifact.path) for artifact in snapshot.all_artifacts]))
+            content = transformer(snapshot)
+            engine.write_file_content(handle, table_entry, content)
+            yield snapshot
 
     # rewrite table, this time with correct sizes and offsets
     with open_ext(target_path, 'r+b') as handle:
@@ -162,9 +134,9 @@ def main() -> None:
 
     directories = [
         ('script', 'script.dat', script_transformer),
-        ('arc0', 'arc0.dat', default_transformer),
-        ('arc1', 'arc1.dat', default_transformer),
-        ('arc2', 'arc2.dat', default_transformer),
+        ('arc0', 'arc0.dat', image_transformer),
+        ('arc1', 'arc1.dat', image_transformer),
+        ('arc2', 'arc2.dat', image_transformer),
     ]  # type: List[Tuple[str, str, Transformer]]
 
     for source_name, target_name, transformer in directories:
@@ -177,13 +149,19 @@ def main() -> None:
 
         if repack:
             print('Packing directory {} -> {}'.format(source_dir, target_path))
-            pack_archive(source_dir, target_path, snapshots, transformer)
+            updated_snapshots = pack_archive(
+                target_path, snapshots, transformer)
         else:
             print(
                 'Patching directory {} -> {}'.format(source_dir, target_path))
-            patch_archive(source_dir, target_path, snapshots, transformer)
-            with snapshot_path.open('wb') as handle:
-                pickle.dump(snapshots, handle)
+            updated_snapshots = patch_archive(
+                target_path, snapshots, transformer)
+
+        for snapshot in updated_snapshots:
+            for artifact in snapshot.all_artifacts:
+                artifact.update_stat()
+        with snapshot_path.open('wb') as handle:
+            pickle.dump(snapshots, handle)
 
 
 if __name__ == '__main__':
