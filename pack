@@ -3,6 +3,7 @@ import pickle
 from pathlib import Path
 from typing import List, Tuple, Generator, Callable
 from lib import engine
+from lib.tlg import tlg
 from lib.snapshot import SnapshotEntry
 from lib.open_ext import open_ext
 import configargparse
@@ -11,11 +12,18 @@ import configargparse
 Transformer = Callable[[bytes, SnapshotEntry], bytes]
 
 
-def default_transformer(content: bytes) -> bytes:
+def default_transformer(content: bytes, snapshot: SnapshotEntry) -> bytes:
+    if snapshot.file_name is not None \
+            and snapshot.file_name.endswith('.tlg') \
+            and snapshot.metadata:
+        # it's only needed to convert PNG back to TLG if it contains valuable
+        # metadata; otherwise it's okay to leave it as PNG - game understands
+        # these.
+        return tlg.png_to_tlg(content, snapshot.metadata)
     return content
 
 
-def script_transformer(content: bytes) -> bytes:
+def script_transformer(content: bytes, snapshot: SnapshotEntry) -> bytes:
     return content.decode('utf-8').encode('cp932')
 
 
@@ -75,13 +83,13 @@ def pack_archive(
         engine.write_file_table(handle, table)
 
         # write and update entries
-        for source_path, _snapshot, entry in items:
+        for source_path, snapshot, entry in items:
             print('Packing file {} -> {:016x}'.format(
                 source_path, entry.file_name_hash))
 
             with source_path.open('rb') as tmp_handle:
                 content = tmp_handle.read()
-                content = transformer(content)
+                content = transformer(content, snapshot)
 
             engine.write_file_content(handle, entry, content)
 
@@ -125,7 +133,7 @@ def patch_archive(
 
             with source_path.open('rb') as tmp_handle:
                 content = tmp_handle.read()
-                content = transformer(content)
+                content = transformer(content, snapshot)
 
             engine.write_file_content(handle, original_entry, content)
 

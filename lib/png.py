@@ -8,3 +8,12 @@ def raw_to_png(width: int, height: int, raw_data: bytes) -> bytes:
     with io.BytesIO() as handle:
         image.save(handle, format='png')
         return handle.getvalue()
+
+
+def png_to_raw(png_content: bytes) -> bytes:
+    with io.BytesIO(bytes(png_content)) as handle:
+        image = PIL.Image.open(handle)
+        return (
+            image.width,
+            image.height,
+            b''.join(bytes(b) for b in image.getdata()))

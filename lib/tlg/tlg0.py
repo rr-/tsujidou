@@ -16,6 +16,10 @@ def extract_string(input: bytes) -> Tuple[bytes, bytes]:
     return input[:size], input[size:]
 
 
+def put_string(input: bytes) -> bytes:
+    return str(len(input)).encode('ascii') + b':' + input
+
+
 def decode_tlg_0(content: bytes) -> Tuple[int, int, bytes, Tags]:
     with ExtendedHandle(io.BytesIO(content)) as handle:
         assert handle.read(len(MAGIC)) == MAGIC
@@ -55,3 +59,21 @@ def decode_tlg_0(content: bytes) -> Tuple[int, int, bytes, Tags]:
                     'Unknown chunk: {}'.format(chunk_name))
 
         return width, height, raw_data, tags
+
+
+def encode_tlg_0(
+        width: int, height: int, raw_data: bytes, tags: Tags) -> bytes:
+    with ExtendedHandle(io.BytesIO(b'')) as handle:
+        handle.write(MAGIC)
+        sub_file_content = tlg5.encode_tlg_5(width, height, raw_data)
+        handle.write_u32_le(len(sub_file_content))
+        handle.write(sub_file_content)
+        if tags:
+            chunk_data = b','.join([
+                put_string(key) + b'=' + put_string(value)
+                for key, value in tags
+            ])
+            handle.write(b'tags')
+            handle.write_u32_le(len(chunk_data))
+            handle.write(chunk_data)
+        return handle.getvalue()

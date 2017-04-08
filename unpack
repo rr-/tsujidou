@@ -3,7 +3,7 @@ import pickle
 import threading
 import concurrent.futures
 from pathlib import Path
-from typing import List, Dict, Tuple
+from typing import Any, List, Dict, Tuple
 from lib import engine, util
 from lib.tlg import tlg
 from lib.snapshot import SnapshotEntry
@@ -18,20 +18,20 @@ class Transformer:
     def get_file_name(self, index: int, entry: engine.FileEntry) -> str:
         if entry.is_extractable:
             assert entry.file_name is not None
-
             if entry.file_name.endswith('.tlg'):
                 return entry.file_name + '.png'
-
             return entry.file_name
         return '{:05d}_{:016x}.dat'.format(index, entry.file_name_hash)
 
     def transform_content(
-            self, entry: engine.FileEntry, content: bytes) -> bytes:
+            self,
+            entry: engine.FileEntry,
+            content: bytes) -> Tuple[bytes, Any]:
+        metadata = None  # type: Any
         if entry.file_name is not None and entry.file_name.endswith('.tlg'):
             assert tlg.is_tlg(content)
-            return tlg.tlg_to_png(content)
-
-        return content
+            content, metadata = tlg.tlg_to_png(content)
+        return content, metadata
 
 
 class ScriptTransformer(Transformer):
@@ -39,34 +39,34 @@ class ScriptTransformer(Transformer):
         return '{:05d}_{:016x}.dat'.format(index, entry.file_name_hash)
 
     def transform_content(
-            self, entry: engine.FileEntry, content: bytes) -> bytes:
-        return content.decode('cp932').encode('utf-8')
+            self,
+            entry: engine.FileEntry,
+            content: bytes) -> Tuple[bytes, Any]:
+        metadata = None
+        return content.decode('cp932').encode('utf-8'), metadata
 
 
 def unpack_entry(
         handle: ExtendedHandle,
         entry: engine.FileEntry,
         target_path: Path,
-        transformer: Transformer) -> None:
-    if target_path.exists():
-        print('Ignoring existing file {:016x} -> {}'.format(
-            entry.file_name_hash, target_path))
-        return
-
+        transformer: Transformer) -> Tuple[Any, Any]:
     if not entry.is_extractable:
         print('Ignoring unextractable file {:016x}'.format(
             entry.file_name_hash))
-        return
+        return None, None
 
     print('Unpacking file {:016x} -> {}'.format(
         entry.file_name_hash, target_path))
     try:
         with _lock:  # reading from the shared file handle needs to be atomic
             content = engine.read_file_content(handle, entry)
-        content = transformer.transform_content(entry, content)
+        content, metadata = transformer.transform_content(entry, content)
         util.save_file(target_path, content)
     except Exception as ex:
         print('Error unpacking {:016x}: {}'.format(entry.file_name_hash, ex))
+
+    return target_path.stat(), metadata
 
 
 def unpack(
@@ -82,14 +82,18 @@ def unpack(
             entry = args[1]  # type: engine.FileEntry
             relative_path = Path(transformer.get_file_name(entry_num, entry))
             target_path = target_dir.joinpath(relative_path)
-            unpack_entry(handle, entry, target_path, transformer)
+
+            stat, metadata = unpack_entry(
+                handle, entry, target_path, transformer)
 
             return SnapshotEntry(
+                entry_num,
                 entry.file_type,
                 entry.file_name,
                 entry.file_name_hash,
                 relative_path,
-                target_path.stat() if target_path.exists() else None)
+                stat,
+                metadata)
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
             return list(executor.map(work, enumerate(table.entries)))
