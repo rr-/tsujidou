@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 from lib import engine
 
 
@@ -7,7 +7,7 @@ class SnapshotEntry:
     def __init__(
             self,
             file_type: engine.FileType,
-            file_name: str,
+            file_name: Optional[str],
             file_name_hash: int,
             relative_path: Path,
             stat: Any) -> None:
