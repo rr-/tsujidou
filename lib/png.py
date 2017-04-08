@@ -1,4 +1,5 @@
 import io
+from typing import Tuple
 import PIL.Image
 
 
@@ -10,7 +11,7 @@ def raw_to_png(width: int, height: int, raw_data: bytes) -> bytes:
         return handle.getvalue()
 
 
-def png_to_raw(png_content: bytes) -> bytes:
+def png_to_raw(png_content: bytes) -> Tuple[int, int, bytes]:
     with io.BytesIO(bytes(png_content)) as handle:
         image = PIL.Image.open(handle)
         return (
