@@ -92,4 +92,4 @@ class ExtendedHandle:
 
 
 def open_ext(path: Path, mode: str) -> ExtendedHandle:
-    return ExtendedHandle(open(path, mode))
+    return ExtendedHandle(path.open(mode))
