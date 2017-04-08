@@ -1,21 +1,22 @@
 #!/usr/bin/env python3
 import pickle
 from pathlib import Path
-from typing import List, Dict, Tuple, Generator
+from typing import List, Tuple, Generator, Callable
 from lib import engine
 from lib.snapshot import SnapshotEntry
 from lib.open_ext import open_ext
 import configargparse
 
 
-class Transformer:
-    def transform_content(self, content: bytes) -> bytes:
-        return content
+Transformer = Callable[[bytes, SnapshotEntry], bytes]
 
 
-class ScriptTransformer(Transformer):
-    def transform_content(self, content: bytes) -> bytes:
-        return content.decode('utf-8').encode('cp932')
+def default_transformer(content: bytes) -> bytes:
+    return content
+
+
+def script_transformer(content: bytes) -> bytes:
+    return content.decode('utf-8').encode('cp932')
 
 
 def collect_entries(
@@ -65,28 +66,22 @@ def pack_archive(
         target_path: Path,
         snapshots: List[SnapshotEntry],
         transformer: Transformer) -> None:
-    entries = []  # type: List[engine.FileEntry]
-    hash_source_path_map = {}  # type: Dict[int, Path]
-
-    for source_path, _snapshot, entry in sorted(
-            collect_entries(source_dir, snapshots, only_new=False)):
-        hash_source_path_map[entry.file_name_hash] = source_path
-        entries.append(entry)
-
+    items = list(sorted(
+        collect_entries(source_dir, snapshots, only_new=False)))
+    entries = [entry for _source_path, _snapshot, entry in items]
     with open_ext(target_path, 'wb') as handle:
         # write dummy file table to reserve space
         table = engine.FileTable(entries)
         engine.write_file_table(handle, table)
 
         # write and update entries
-        for entry in entries:
-            source_path = hash_source_path_map[entry.file_name_hash]
+        for source_path, _snapshot, entry in items:
             print('Packing file {} -> {:016x}'.format(
                 source_path, entry.file_name_hash))
 
             with source_path.open('rb') as tmp_handle:
                 content = tmp_handle.read()
-                content = transformer.transform_content(content)
+                content = transformer(content)
 
             engine.write_file_content(handle, entry, content)
 
@@ -130,7 +125,7 @@ def patch_archive(
 
             with source_path.open('rb') as tmp_handle:
                 content = tmp_handle.read()
-                content = transformer.transform_content(content)
+                content = transformer(content)
 
             engine.write_file_content(handle, original_entry, content)
 
@@ -158,10 +153,10 @@ def main() -> None:
     repack = args.repack  # type: bool
 
     directories = [
-        ('script', 'script.dat', ScriptTransformer()),
-        ('arc0', 'arc0.dat', Transformer()),
-        ('arc1', 'arc1.dat', Transformer()),
-        ('arc2', 'arc2.dat', Transformer()),
+        ('script', 'script.dat', script_transformer),
+        ('arc0', 'arc0.dat', default_transformer),
+        ('arc1', 'arc1.dat', default_transformer),
+        ('arc2', 'arc2.dat', default_transformer),
     ]  # type: List[Tuple[str, str, Transformer]]
 
     for source_name, target_name, transformer in directories:
