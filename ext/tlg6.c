@@ -548,7 +548,7 @@ static PyObject *tlg6_decode(PyObject *self, PyObject *args)
     if (!PyArg_ParseTuple(args, "y*", &input))
         goto end;
 
-    stream = stream_create(input.buf, input.len);
+    stream = stream_create_for_data(input.buf, input.len);
     if (!stream)
         goto end;
 

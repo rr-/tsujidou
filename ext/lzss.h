@@ -10,4 +10,11 @@ unsigned char *lzss_decompress(
     unsigned char *dict,
     size_t *dict_pos);
 
+unsigned char *lzss_compress(
+    const unsigned char *input,
+    const size_t input_size,
+    size_t *output_size,
+    unsigned char *dict,
+    size_t *dict_pos);
+
 #endif

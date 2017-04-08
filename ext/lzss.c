@@ -81,3 +81,33 @@ unsigned char *lzss_decompress(
 
     return output;
 }
+
+// dummy implementation
+unsigned char *lzss_compress(
+    const unsigned char *input,
+    const size_t input_size,
+    size_t *output_size,
+    unsigned char *dict,
+    size_t *dict_pos)
+{
+    assert(input);
+    assert(output_size);
+
+    *output_size = input_size + input_size / 8;
+    unsigned char *output = PyMem_RawMalloc(*output_size);
+    if (!output)
+    {
+        PyErr_SetNone(PyExc_MemoryError);
+        return NULL;
+    }
+
+    unsigned char *output_ptr = output;
+    for (size_t i = 0; i < input_size; i++)
+    {
+        if (i % 8 == 0)
+            *output_ptr++ = 0;
+        *output_ptr++ = input[i];
+    }
+
+    return output;
+}
