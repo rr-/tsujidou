@@ -29,8 +29,8 @@ class Transformer:
             content: bytes) -> Tuple[bytes, Any]:
         metadata = None  # type: Any
         if entry.file_name is not None and entry.file_name.endswith('.tlg'):
-            assert tlg.is_tlg(content)
-            content, metadata = tlg.tlg_to_png(content)
+            if tlg.is_tlg(content):
+                content, metadata = tlg.tlg_to_png(content)
         return content, metadata
 
 
