@@ -78,8 +78,8 @@ def unpack(
         table = engine.read_file_table(handle, file_name_hash_map)
 
         def work(args: Tuple[int, engine.FileEntry]) -> SnapshotEntry:
-            entry_num: int = args[0]
-            entry: engine.FileEntry = args[1]
+            entry_num = args[0]  # type: int
+            entry = args[1]  # type: engine.FileEntry
             relative_path = Path(transformer.get_file_name(entry_num, entry))
             target_path = target_dir.joinpath(relative_path)
             unpack_entry(handle, entry, target_path, transformer)
@@ -110,7 +110,7 @@ def main() -> None:
     args = parse_args()
     game_dir = Path(args.game_dir)
     data_dir = Path(args.data_dir)
-    file_name_hash_map: Dict[int, str] = {}
+    file_name_hash_map = {}  # type: Dict[int, str]
 
     if args.file_names:
         file_name_hash_map = {
@@ -118,12 +118,12 @@ def main() -> None:
             for line in Path(args.file_names).open('r', encoding='utf-8')
         }
 
-    directories: Dict[str, Tuple[str, Transformer]] = {
+    directories = {
         'script.dat': ('script', ScriptTransformer()),
         'arc0.dat': ('arc0', Transformer()),
         'arc1.dat': ('arc1', Transformer()),
         'arc2.dat': ('arc2', Transformer()),
-    }
+    }  # type: Dict[str, Tuple[str, Transformer]]
 
     for source_name, (target_name, transformer) in directories.items():
         source_path = game_dir.joinpath(source_name)

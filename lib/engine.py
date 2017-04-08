@@ -76,7 +76,7 @@ def read_file_entry(
     size_compressed = handle.read_u32_le() ^ (file_name_hash & 0xFFFFFFFF)
     size_original   = handle.read_u32_le() ^ (file_name_hash & 0xFFFFFFFF)
 
-    file_name: Optional[str] = None
+    file_name = None  # type: Optional[str]
     if file_name_hash in file_name_hash_map:
         file_name = file_name_hash_map[file_name_hash]
 

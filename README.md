@@ -1,6 +1,6 @@
 ### Prerequisites
 
-1. Python 3.6
+1. Python 3.5
 
 ### Usage - pre-release
 

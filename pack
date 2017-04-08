@@ -65,8 +65,8 @@ def pack_archive(
         target_path: Path,
         snapshots: List[SnapshotEntry],
         transformer: Transformer) -> None:
-    entries: List[engine.FileEntry] = []
-    hash_source_path_map: Dict[int, Path] = {}
+    entries = []  # type: List[engine.FileEntry]
+    hash_source_path_map = {}  # type: Dict[int, Path]
 
     for source_path, _snapshot, entry in sorted(
             collect_entries(source_dir, snapshots, only_new=False)):
@@ -155,14 +155,14 @@ def main() -> None:
     args = parse_args()
     game_dir = Path(args.game_dir)
     data_dir = Path(args.data_dir)
-    repack: bool = args.repack
+    repack = args.repack  # type: bool
 
-    directories: List[Tuple[str, str, Transformer]] = [
+    directories = [
         ('script', 'script.dat', ScriptTransformer()),
         ('arc0', 'arc0.dat', Transformer()),
         ('arc1', 'arc1.dat', Transformer()),
         ('arc2', 'arc2.dat', Transformer()),
-    ]
+    ]  # type: List[Tuple[str, str, Transformer]]
 
     for source_name, target_name, transformer in directories:
         source_dir = data_dir.joinpath(source_name)

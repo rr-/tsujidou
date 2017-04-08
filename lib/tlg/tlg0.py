@@ -30,7 +30,7 @@ def decode_tlg_0(content: bytes) -> Tuple[int, int, bytes, Tags]:
         else:
             assert False, 'Not a TLG image'
 
-        tags: Tags = []
+        tags = []  # type: Tags
         while True:
             chunk_name = handle.read(4)
             if not chunk_name:
