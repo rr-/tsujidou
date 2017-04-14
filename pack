@@ -31,7 +31,8 @@ def image_transformer(snapshot: Snapshot) -> bytes:
 def script_transformer(snapshot: Snapshot) -> bytes:
     script_content = snapshot.read_extra_artifact('script')
     assert script_content is not None
-    return script.encode_script(script_content)
+    return script.encode_script(
+        snapshot.extra_artifacts['script'].path, script_content)
 
 
 def filter_snapshots(
