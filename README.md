@@ -48,11 +48,28 @@ complicated than usual.
 Now you're ready to rock. Type `./unpack -h` - it should print help with
 available switches.
 
+## Caveats
+
+1. Bypassing 80 character limit in dialogs
+
+   By default, the game limits the game text to 80 characters. While this might
+   make sense for 日本語 due to its compactness, the English language needs a
+   little more space. To fix this, in `data/script/00000_*.txt`, replace:
+
+   ```
+   CODE setTextCreate %strMesM0,%strMesM1
+   ```
+
+   with
+
+   ```
+   CODE setTextCreate 999,%strMesM1
+   ```
+
 
 ## To do
 
-1. Figure out how to get the game to accept messages longer than 80 characters
-2. Write LZSS GFX compressor for release
+1. Write LZSS GFX compressor for release
 
 ---
 
