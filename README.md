@@ -51,9 +51,7 @@ available switches.
 
 ## To do
 
-1. Scripts:
-    - word wrapping
-    - unicode hack
+1. Figure out how to get the game to accept messages longer than 80 characters
 2. Write LZSS GFX compressor for release
 
 ---
