@@ -81,7 +81,8 @@ def encode_script(script_path: Path, content: bytes) -> bytes:
                 if _wclen(' '.join(output_words + [word])) <= MAX_LINE_LENGTH:
                     output_words.append(word)
                 else:
-                    output_lines.append(' '.join(output_words))
+                    if output_words:
+                        output_lines.append(' '.join(output_words))
                     output_words = [word]
             if output_words:
                 output_lines.append(' '.join(output_words))
