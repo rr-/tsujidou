@@ -50,7 +50,6 @@ def encode_script(script_path: Path, content: bytes) -> bytes:
     def process_text(input_string: str, line_number: int) -> str:
         MAX_LINE_COUNT = 3
         MAX_LINE_LENGTH = 49
-        MAX_TEXT_LENGTH = 80
         NEWLINE_MARKER = '[n]'
 
         output_lines = []
@@ -82,15 +81,6 @@ def encode_script(script_path: Path, content: bytes) -> bytes:
             print(
                 'Warning: too long line in {} at line {}'.format(
                     script_path, line_number),
-                file=sys.stderr)
-
-        if len(output_string.replace(NEWLINE_MARKER, '')) > MAX_TEXT_LENGTH:
-            print(
-                'Warning: too many characters in {} at line {} ({})'.format(
-                    script_path,
-                    line_number,
-                    output_string.replace(NEWLINE_MARKER, '')
-                    [MAX_TEXT_LENGTH:]),
                 file=sys.stderr)
 
         return output_string
