@@ -54,21 +54,18 @@ def encode_script(script_path: Path, content: bytes) -> bytes:
 
         output_lines = []
         for input_line in input_string.split(NEWLINE_MARKER):
-            if input_line:
-                line_length = 0
-                output_words = []
-                for word in input_line.split():
-                    if line_length + len(word) + 1 <= MAX_LINE_LENGTH:
-                        output_words.append(word)
-                        line_length += len(word) + 1
-                    else:
-                        output_lines.append(' '.join(output_words))
-                        output_words = [word]
-                        line_length = len(word)
-                if output_words:
-                    output_lines.append(' '.join(output_words))
-            else:
+            if not input_line:
                 output_lines.append('')
+                continue
+            output_words = []
+            for word in input_line.split():
+                if len(' '.join(output_words + [word])) <= MAX_LINE_LENGTH:
+                    output_words.append(word)
+                else:
+                    output_lines.append(' '.join(output_words))
+                    output_words = [word]
+            if output_words:
+                output_lines.append(' '.join(output_words))
         output_string = NEWLINE_MARKER.join(output_lines)
 
         if len(output_lines) > MAX_LINE_COUNT:
