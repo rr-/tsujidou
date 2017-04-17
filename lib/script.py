@@ -62,6 +62,15 @@ def encode_script(script_path: Path, content: bytes) -> bytes:
         MAX_LINE_LENGTH = 49
         NEWLINE_MARKER = '[n]'
 
+        prefix = ''
+        suffix = ''
+        while input_string.startswith(('「', '『', '（')):
+            prefix += input_string[0:1]
+            input_string = input_string[1:]
+        while input_string.endswith(('）', '』', '」')):
+            suffix = input_string[-1] + suffix
+            input_string = input_string[0:-1]
+
         output_lines = []
         for input_line in input_string.split(NEWLINE_MARKER):
             if not input_line:
@@ -90,7 +99,7 @@ def encode_script(script_path: Path, content: bytes) -> bytes:
                     script_path, line_number),
                 file=sys.stderr)
 
-        return output_string
+        return prefix + output_string + suffix
 
     def gather_lines() -> Iterator[str]:
         speech = {}
