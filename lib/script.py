@@ -4,6 +4,16 @@ from pathlib import Path
 from typing import List, Iterator
 
 
+def _wclen(text: str) -> int:
+    ret = 0
+    for char in text:
+        if ord(char) < 128:
+            ret += 1
+        else:
+            ret += 2
+    return ret
+
+
 def decode_script(content: bytes) -> bytes:
     def format_command(command: str, arg: str) -> str:
         return '{} {}'.format(command, arg or '').rstrip()
@@ -59,7 +69,7 @@ def encode_script(script_path: Path, content: bytes) -> bytes:
                 continue
             output_words = []
             for word in input_line.split():
-                if len(' '.join(output_words + [word])) <= MAX_LINE_LENGTH:
+                if _wclen(' '.join(output_words + [word])) <= MAX_LINE_LENGTH:
                     output_words.append(word)
                 else:
                     output_lines.append(' '.join(output_words))
@@ -74,7 +84,7 @@ def encode_script(script_path: Path, content: bytes) -> bytes:
                     script_path, line_number),
                 file=sys.stderr)
 
-        if any(len(line) > MAX_LINE_LENGTH for line in output_lines):
+        if any(_wclen(line) > MAX_LINE_LENGTH for line in output_lines):
             print(
                 'Warning: too long line in {} at line {}'.format(
                     script_path, line_number),
