@@ -103,6 +103,7 @@ def encode_script(script_path: Path, content: bytes) -> bytes:
         return prefix + output_string + suffix
 
     def gather_lines() -> Iterator[str]:
+        text = {}
         speech = {}
 
         for i, old_line in enumerate(content.decode('utf-8').split('\n')):
@@ -111,31 +112,39 @@ def encode_script(script_path: Path, content: bytes) -> bytes:
                 yield ''
                 continue
 
-            command, args = (
+            command, arg = (
                 old_line.lstrip().split(' ', 1)
                 if ' ' in old_line
                 else (old_line, ''))
 
             if command == 'SPEAK-CHAR':
-                speech['char'] = args
+                speech['char'] = arg
             elif command == 'SPEAK-FILE':
-                assert speech is not None
-                speech['file'] = args
+                speech['file'] = arg
             elif command == 'SPEAK-ORIG':
-                continue
+                speech['orig'] = arg
             elif command == 'SPEAK-TEXT':
-                assert speech is not None
-                speech['text'] = process_text(args, line_number)
+                if 'orig' in speech and speech['orig'] == arg:
+                    speech['text'] = speech['orig']
+                else:
+                    speech['text'] = process_text(arg, line_number)
                 if 'file' in speech:
                     yield '【{char},{file}】{text}'.format(**speech)
                 else:
                     yield '【{char}】{text}'.format(**speech)
                 speech = {}
-            elif command == 'CODE':
-                yield args
+
             elif command == 'ORIG':
-                continue
+                text['orig'] = arg
             elif command == 'TEXT':
-                yield '【】' + process_text(args, line_number)
+                if 'orig' in text and text['orig'] == arg:
+                    text['text'] = text['orig']
+                else:
+                    text['text'] = process_text(arg, line_number)
+                yield '【】' + text['text']
+                text = {}
+
+            elif command == 'CODE':
+                yield arg
 
     return '\n'.join(gather_lines()).encode('cp932')
