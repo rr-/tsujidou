@@ -66,6 +66,10 @@ def write_file_table(
     assert handle.tell() == 0
     handle.write_u32_le(len(table.entries) ^ ENTRY_COUNT_HASH)
     for entry in table.entries:
+        if not entry.is_extractable:
+            print('Ignoring unextractable file {:016x}'.format(
+                entry.file_name_hash))
+            continue
         write_file_entry(handle, entry)
 
 
