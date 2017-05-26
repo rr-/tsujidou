@@ -12,6 +12,8 @@
     ```ini
     game-dir=./game
     data-dir=./data
+    max_line_count=3
+    max_line_length=49
     ```
 
 2. Unpack the game data: `./unpack` (please be patient)

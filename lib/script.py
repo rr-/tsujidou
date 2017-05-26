@@ -56,10 +56,14 @@ def decode_script(content: bytes) -> bytes:
     return '\n'.join(lines).encode('utf-8')
 
 
-def encode_script(script_path: Path, content: bytes) -> bytes:
-    def process_text(input_string: str, line_number: int) -> str:
-        MAX_LINE_COUNT = 3
-        MAX_LINE_LENGTH = 49
+def encode_script(
+        script_path: Path,
+        content: bytes,
+        max_line_count: int,
+        max_line_length: int) -> bytes:
+    def process_text(
+            input_string: str,
+            line_number: int) -> str:
         NEWLINE_MARKER = '[n]'
 
         prefix = ''
@@ -78,7 +82,7 @@ def encode_script(script_path: Path, content: bytes) -> bytes:
                 continue
             output_words = []
             for word in input_line.split():
-                if _wclen(' '.join(output_words + [word])) <= MAX_LINE_LENGTH:
+                if _wclen(' '.join(output_words + [word])) <= max_line_length:
                     output_words.append(word)
                 else:
                     if output_words:
@@ -88,13 +92,13 @@ def encode_script(script_path: Path, content: bytes) -> bytes:
                 output_lines.append(' '.join(output_words))
         output_string = NEWLINE_MARKER.join(output_lines)
 
-        if len(output_lines) > MAX_LINE_COUNT:
+        if len(output_lines) > max_line_count:
             print(
                 'Warning: too many lines in {} at line {}'.format(
                     script_path, line_number),
                 file=sys.stderr)
 
-        if any(_wclen(line) > MAX_LINE_LENGTH for line in output_lines):
+        if any(_wclen(line) > max_line_length for line in output_lines):
             print(
                 'Warning: too long line in {} at line {}'.format(
                     script_path, line_number),

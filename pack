@@ -28,11 +28,17 @@ def image_transformer(snapshot: Snapshot) -> bytes:
     return ret
 
 
-def script_transformer(snapshot: Snapshot) -> bytes:
+def script_transformer(
+        snapshot: Snapshot,
+        max_line_count: int,
+        max_line_length: int) -> bytes:
     script_content = snapshot.read_extra_artifact('script')
     assert script_content is not None
     return script.encode_script(
-        snapshot.extra_artifacts['script'].path, script_content)
+        snapshot.extra_artifacts['script'].path,
+        script_content,
+        max_line_count,
+        max_line_length)
 
 
 def filter_snapshots(
@@ -124,6 +130,8 @@ def parse_args() -> configargparse.Namespace:
     parser.add('--game-dir', required=True)
     parser.add('--data-dir', required=True, default='./data')
     parser.add('--repack', action='store_true')
+    parser.add('--max-line-count', type=int, default=3)
+    parser.add('--max-line-length', type=int, default=49)
     return parser.parse_args()
 
 
@@ -131,10 +139,17 @@ def main() -> None:
     args = parse_args()
     game_dir = Path(args.game_dir)
     data_dir = Path(args.data_dir)
+    max_line_count = args.max_line_count
+    max_line_length = args.max_line_length
     repack = args.repack  # type: bool
 
     directories = [
-        ('script', 'script.dat', script_transformer),
+        (
+            'script',
+            'script.dat',
+            lambda snapshot: script_transformer(
+                snapshot, max_line_count, max_line_length)
+        ),
         ('arc0', 'arc0.dat', image_transformer),
         ('arc1', 'arc1.dat', image_transformer),
         ('arc2', 'arc2.dat', image_transformer),
