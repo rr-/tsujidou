@@ -1,9 +1,16 @@
-## Prerequisites
+# Translation finished
+
+The translation project [is finished](https://vndb.org/r51447).  
+The toolkit is now read-only.
+
+---
+
+### Prerequisites
 
 1. Python 3.5
 2. gcc
 
-## Usage
+### Usage
 
 ##### Pre-release
 
@@ -27,7 +34,7 @@
 1. Pack the game data back: `./pack --repack` (this will repack the whole thing
    from scratch, super slow)
 
-## Setting up environment
+### Setting up environment
 
 #### On Windows from scratch
 
@@ -50,7 +57,7 @@ complicated than usual.
 Now you're ready to rock. Type `./unpack -h` - it should print help with
 available switches.
 
-## Caveats
+### Caveats
 
 1. Bypassing 80 character limit in dialogs
 
@@ -69,7 +76,7 @@ available switches.
    ```
 
 
-## To do
+### Nice to have in the future
 
 1. Write LZSS GFX compressor for release
 
